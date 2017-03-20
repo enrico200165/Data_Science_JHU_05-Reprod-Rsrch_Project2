@@ -1,0 +1,93 @@
+---
+title: "Strms in USA, which types are most harful for the population, which types are most harful for the economy"
+author: "Enrico"
+date: "20 marzo 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE, cache=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# SYnopsys  
+????????????????????????????????????????????????????????????????????
+
+## Data Processing  
+### Techical transformations for performance
+By technical we mean that NO data model transformation is performed, only modification to storage format.
+Data are relatively large and take several minutes to load. An attempt to reduce this loading time has been made, based on:   
+- lazy loading: download from internet if local .bz2 file not present
+- avoid reading directly compressed file, decompress .bz2 and read .csv, this under the assumption that reading uncompressed files is faster (assumption not punctually verified but based on first attempts to read directly compressed file, that had much longer times or hanged, all were manually terminated after running for an extremely long time)
+- lazy decomopression: decompress .bz2 if .csv not present
+- save to .rds, under the assumption, supported by previous experiences of the author, and some internet posts, that .rds files are faster [post 1](http://stackoverflow.com/questions/4756989/how-to-load-data-quickly-into-r)  [post 2](http://stackoverflow.com/questions/11559628/speed-up-rdata-load)
+
+```{r dataTechProcessing}
+destfilestem <- "data/StormData"
+csvfile <- paste(destfilestem,".csv",sep="")
+bz2file <- paste(csvfile,".bz2",sep="")
+RDSFile <- paste(destfilestem,".rds",sep="")
+
+# lazy download remote file
+if(!file.exists(bz2file)){
+  cat("downloading the file from inet")
+  url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+  es <- tryCatch(download.file(url, bz2file
+    ,method = "auto", quiet = FALSE)
+    ,error=function(e) 1)
+}
+
+# lazy uncompress, not strictly necessary, hoping that makes things faster
+if(!file.exists(csvfile)){
+  library(R.utils)
+  bunzip2(bz2file,csvfile,remove = FALSE, skip = TRUE)
+}
+
+# read data  destfile
+if (!file.exists(RDSFile)) {
+  cat("reading local file", csvfile)
+  tempo <- system.time({
+    data_org <- read.csv(csvfile)
+    })
+  cat(csvfile,"file read in",tempo[3], "writing in RDS format")
+  saveRDS(data_org,RDSFile,compress = FALSE)
+}
+
+if (!exists(deparse(substitute(data_org)))) {
+  data_org <- readRDS(RDSFile) 
+}
+
+str(data_org)
+
+```
+### Check data status (NAs)
+colonnesapply
+```{r dataCheck}
+
+countNAs <- sapply(1:ncol(data_org), function(x) sum(is.na(data_org[x])))
+colsWithNAs <- which(countNAs > 0)
+
+```
+
+
+
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
