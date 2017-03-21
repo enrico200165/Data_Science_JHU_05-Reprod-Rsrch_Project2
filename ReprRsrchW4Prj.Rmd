@@ -1,5 +1,5 @@
 ---
-title: "Strms in USA, which types are most harful for the population, which types are most harful for the economy"
+title: "Strms in USA, types  most harful for the population, Types most harful for the economy, based on  NOAA Storm data"
 author: "Enrico"
 date: "20 marzo 2017"
 output: html_document
@@ -7,15 +7,21 @@ output: html_document
 
 ```{r setup, include=FALSE, cache=TRUE}
 knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
 ```
 
 # Synopsys  
 ????????????????????????????????????????????????????????????????????  
 
+
+
 ## Overview  
 Using the raw data available [here](http://www1.ncdc.noaa.gov/pub/data/swdi/stormevents/csvfiles/) and documented [here](http://www1.ncdc.noaa.gov/pub/data/swdi/stormevents/csvfiles/Storm-Data-Export-Format.docx) (no need to download, the code that is embedded in this document takes care of it)
 
-type events are in column event_type, they are
+type events are in column EVTYPE, 
+
+Damage to population is in 2 variables: FATALITIES, INJURIES
+
 
 ## Results  
 
@@ -64,8 +70,6 @@ if (!exists(deparse(substitute(data_org)))) {
   data_org <- readRDS(RDSFile) 
 }
 
-str(data_org)
-
 ```
 ### Check data status (NAs)
 ```{r dataCheck}
@@ -73,11 +77,151 @@ str(data_org)
 countNAs <- sapply(1:ncol(data_org), function(x) sum(is.na(data_org[x])))
 colsWithNAs <- which(countNAs > 0)
 names(data_org)[colsWithNAs]
+```
+
+## Logical data processing
+
+```{r logicalDataProc}
 
 ```
 
 
+## Exploratory Data Analysis, Remove  
 
+```{r exploratoryDataAnalysis}
+library(dplyr)
+
+str(data_org)
+
+data <- data_org[ , c("BGN_DATE", "EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")]
+names(data) <- tolower(names(data))
+
+length(unique(data_org$evtype))
+# remove(data_org) # free memory
+
+data <- dplyr::mutate(data
+  # index for people damage
+  ,people_dmg_score = fatalities*10+injuries*4
+  ,year = as.numeric(format(as.Date(data$bgn_date, format = "%m/%d/%Y"), "%Y")))
+
+
+
+# let's remove years with too few records
+obs_treshold <- 10000
+years_grp <- group_by(data,year)
+year_obs <- summarize(years_grp, obs_year = n())
+year_ord <- order(year_obs$obs_year)
+years_ok <- year_obs[year_obs$obs_year > obs_treshold, ]$year
+data <-data[data$year %in% years_ok, ]
+unique(data$year)
+
+
+# index for people damage
+evtype_grp <- group_by(data,evtype)
+people_dmg_sums <- summarize(evtype_grp,people_sum = sum(people_dmg_score))
+people_order <- people_dmg_sums[order(-people_dmg_sums$people_sum), ]
+people_order[(people_order$people_sum > 0),]
+
+library(ggplot2)
+toPlot <- people_order[1:10,]
+p <- ggplot(toPlot, aes(evtype,people_sum))
+p <- p + geom_bar(stat='identity')
+p <- p + theme(axis.text.x=element_text(angle=90))
+p <- p + ggtitle("The 10 Storm Types That Cause More People Damage")
+p <- p +xlab("Storm Type")
+p <- p +ylab("People Damage Score")
+p
+```
+
+Transform exponent columns from factors to chars to simplify processing
+```{r factorsToChars, results='hide'}
+data$propdmgexp <-  lapply(data$propdmgexp, as.character)
+data$cropdmgexp <-  lapply(data$cropdmgexp, as.character)
+
+```
+
+Value for property and crop damage is, in both cases, split in two columns
+- propdmg, propdmg<b>exp</b>  
+- copdmg, cropdmg<b>exp</b>  
+I build two new columns, property and crops, containing the values
+```{r calculateValues, results='hide'}
+
+multiplier <- function(x){
+if (is.na(x) || nchar(x) == 0) 
+    return(1)
+if(is.numeric(x)) {
+    return(10^x)
+}
+myexp <- switch(tolower(x),
+    " " = 0,
+    "-" = -1,
+    "+" = 1,
+    "0" = 0,
+    "1" = 1,
+    "2" = 2,
+    "3" = 3,
+    "4" = 4,
+    "5" = 5,
+    "6" = 6,
+    "7" = 7,
+    "8" = 8,
+    "9" = 9,
+    "h" = 2,
+    "k" = 3,
+    "m" = 6,
+    "b" = 9,
+    0
+  )
+  10^myexp
+}
+
+#library(data.table); data <- data.table(data)
+
+j <- 0 
+data$property <- sapply(1:nrow(data), function(i) {
+  if (is.na(data[i,5]) || data[i,5] == 0)
+    return(0)
+  ret <- data[i,5]*multiplier(data[i,6])
+  #cat(paste("[",i,"] ",ret, "=", data[i,5],",",data[i,6]," mult ", multiplier(data[i,6]),"\n"))
+  j <<- j+1
+  # if (j%%1000 == 0) cat(" ",j/1000)
+  return(ret)
+  })
+j <- 0
+data$crops <- sapply(1:nrow(data), function(i) {
+  if (is.na(data[i,7]) || data[i,7] == 0)
+    return(0)
+  ret <- data[i,7]*multiplier(data[i,8])
+  #cat(paste("[",i,"] ",ret, "=", data[i,5],",",data[i,6]," mult ", multiplier(data[i,6]),"\n"))
+  j <<- j+1;  if (j%%1000 == 0) cat(" ",j/1000)
+  return(ret)
+  })
+
+data$econ_dmg <- data$property + data$crops
+
+saveRDS(data,"data_ok.rds")
+
+```
+
+## Storm Types and Property Damage
+
+```{r calculateValues, results='hide'}
+library(ggplot2)
+
+# economic damage
+eco_dmg_sums <- summarize(evtype_grp,eco_sum = sum(econ_dmg))
+eco_order <- eco_dmg_sums[order(-eco_dmg_sums$eco_sum), ]
+eco_order[(eco_order$eco_sum > 0),]
+eco_order <- eco_order[1:10, ]
+
+p <- ggplot(eco_order, aes(evtype,eco_sum))
+p <- p + geom_bar(stat='identity')
+p <- p + theme(axis.text.x=element_text(angle=90))
+p <- p + ggtitle("The 10 Storm Types That Cause More Economic Damage")
+p <- p +xlab("Storm Type")
+p <- p +ylab("Economic Damage")
+p
+```
 
 
 ## R Markdown
