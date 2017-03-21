@@ -205,10 +205,12 @@ saveRDS(data,"data_ok.rds")
 
 ## Storm Types and Property Damage
 
-```{r calculateValues, results='hide'}
+```{r plotProperty}
+library(dplyr)
 library(ggplot2)
 
 # economic damage
+evtype_grp <- group_by(data,evtype)
 eco_dmg_sums <- summarize(evtype_grp,eco_sum = sum(econ_dmg))
 eco_order <- eco_dmg_sums[order(-eco_dmg_sums$eco_sum), ]
 eco_order[(eco_order$eco_sum > 0),]
